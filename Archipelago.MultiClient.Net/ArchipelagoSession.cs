@@ -237,6 +237,29 @@ namespace Archipelago.MultiClient.Net
             SetResultAfterTimeout<LoginResult>(loginResultTask, ArchipelagoConnectionTimeoutInSeconds, 
 	            new LoginFailure("Connection timed out."));
 
+			if (loginResultTask.Task.Result.Successful) {
+				Task.Factory.StartNew ( () => {
+				var timer = new System.Timers.Timer(10000);
+				timer.Elapsed += (s, e) => {
+					Socket.DisconnectAsync();
+				};
+				ArchipelagoSocketHelperDelagates.PacketsSentHandler sentHandler = (packets) => { if (packets[0] is BouncePacket) {
+					timer.Enabled = true;
+				}};
+				ArchipelagoSocketHelperDelagates.PacketReceivedHandler receivedHandler = (packet) => { if (packet is BouncePacket) {
+					timer.Enabled = false;
+				}};
+				Socket.PacketsSent += sentHandler;
+				Socket.PacketReceived += receivedHandler;
+				while (Socket.Connected) {
+						Socket.SendPacketAsync(new BouncePacket(){Slots = new List<int>(){ConnectionInfo.Slot}});
+						Thread.Sleep(TimeSpan.FromSeconds(10));
+					}
+				Socket.PacketsSent -= sentHandler;
+				Socket.PacketReceived -= receivedHandler;
+				});
+			}
+
             return loginResultTask.Task;
         }
 
